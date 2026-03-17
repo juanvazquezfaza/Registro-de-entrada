@@ -13,13 +13,12 @@
   <div class="app-shell">
     <header class="hero">
       <div>
-        <p class="eyebrow">Control horario personal</p>
+        <p class="eyebrow">Control horario de entrada</p>
         <h1>Registro de entrada</h1>
-        <p class="hero-text">Ficha con un toque, revisa tus registros y controla si vas a favor o si debes minutos a la empresa.</p>
+        <p class="hero-text">Botón de fichaje, saldo visual y carga del histórico desde tu Excel anual.</p>
       </div>
       <div class="hero-actions">
         <button id="btnEntradaAhora" class="btn btn-primary btn-large">Fichar entrada ahora</button>
-        <button id="btnSalidaAhora" class="btn btn-secondary btn-large">Fichar salida ahora</button>
       </div>
     </header>
 
@@ -39,12 +38,12 @@
             <strong id="todayEntry">—</strong>
           </div>
           <div class="mini-card">
-            <span class="mini-label">Salida</span>
-            <strong id="todayExit">—</strong>
+            <span class="mini-label">Objetivo</span>
+            <strong id="todayTarget">—</strong>
           </div>
           <div class="mini-card">
-            <span class="mini-label">Trabajado</span>
-            <strong id="todayWorked">—</strong>
+            <span class="mini-label">Saldo día</span>
+            <strong id="todayBalance">—</strong>
           </div>
         </div>
         <div id="todayMessage" class="status-banner neutral">Todavía no hay registro para hoy.</div>
@@ -66,8 +65,8 @@
             <small id="saldoMesTexto">Mes actual</small>
           </div>
           <div class="summary-card info">
-            <span>Jornada objetivo</span>
-            <strong id="dailyTargetLabel">07:30</strong>
+            <span>Hora objetivo</span>
+            <strong id="dailyTargetLabel">07:00</strong>
             <small>Editable en configuración</small>
           </div>
         </div>
@@ -84,19 +83,11 @@
             <input type="date" id="recordDate" required />
           </label>
           <label>
-            <span>Entrada</span>
-            <input type="time" id="recordEntry" />
-          </label>
-          <label>
-            <span>Salida</span>
-            <input type="time" id="recordExit" />
-          </label>
-          <label>
-            <span>Pausa (min)</span>
-            <input type="number" id="recordBreak" min="0" step="1" value="0" />
+            <span>Hora de entrada</span>
+            <input type="time" id="recordEntry" required />
           </label>
           <label class="full-width">
-            <span>Nota</span>
+            <span>Observación</span>
             <input type="text" id="recordNote" maxlength="120" placeholder="Opcional" />
           </label>
           <div class="form-actions full-width">
@@ -112,20 +103,12 @@
         </div>
         <form id="configForm" class="record-form compact-form">
           <label>
-            <span>Horas objetivo</span>
-            <input type="number" id="configTargetHours" min="0" max="24" step="1" />
+            <span>Hora objetivo</span>
+            <input type="time" id="configTargetTime" step="60" />
           </label>
           <label>
-            <span>Minutos objetivo</span>
-            <input type="number" id="configTargetMinutes" min="0" max="59" step="1" />
-          </label>
-          <label>
-            <span>Pausa habitual (min)</span>
-            <input type="number" id="configDefaultBreak" min="0" step="1" />
-          </label>
-          <label class="full-width">
             <span>Texto empresa</span>
-            <input type="text" id="configCompanyName" maxlength="40" placeholder="Empresa" />
+            <input type="text" id="configCompanyName" maxlength="40" placeholder="la empresa" />
           </label>
           <div class="form-actions full-width">
             <button type="submit" class="btn btn-secondary">Guardar configuración</button>
@@ -143,19 +126,24 @@
               Importar JSON
               <input id="importJsonInput" type="file" accept="application/json" hidden />
             </label>
+            <label class="btn btn-secondary file-btn">
+              Importar Excel
+              <input id="importExcelInput" type="file" accept=".xlsx,.xls" hidden />
+            </label>
           </div>
         </div>
+        <div id="importInfo" class="import-info">Importa tu Excel anual para cargar el histórico desde principio de año.</div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>Fecha</th>
+                <th>Día</th>
                 <th>Entrada</th>
-                <th>Salida</th>
-                <th>Pausa</th>
-                <th>Trabajado</th>
-                <th>Objetivo</th>
-                <th>Saldo</th>
+                <th>Exceso</th>
+                <th>Defecto</th>
+                <th>Saldo día</th>
+                <th>Acumulado</th>
                 <th>Estado</th>
                 <th>Acciones</th>
               </tr>
@@ -174,12 +162,12 @@
   <template id="recordRowTemplate">
     <tr>
       <td class="cell-date"></td>
+      <td class="cell-day"></td>
       <td class="cell-entry"></td>
-      <td class="cell-exit"></td>
-      <td class="cell-break"></td>
-      <td class="cell-worked"></td>
-      <td class="cell-target"></td>
+      <td class="cell-early"></td>
+      <td class="cell-late"></td>
       <td class="cell-balance"></td>
+      <td class="cell-running"></td>
       <td class="cell-status"></td>
       <td class="cell-actions">
         <button class="btn-table edit">Editar</button>
@@ -188,6 +176,7 @@
     </tr>
   </template>
 
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

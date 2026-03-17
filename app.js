@@ -1,558 +1,536 @@
-const STORAGE_KEY = 'registroEntradaApp_v1';
+const STORAGE_KEY = 'registroEntradaApp.v2';
+const DEFAULT_STATE = {
+  config: {
+    targetTime: '07:00',
+    companyName: 'la empresa'
+  },
+  records: []
+};
 
-const state = loadState();
+let state = loadState();
 
 const els = {
   btnEntradaAhora: document.getElementById('btnEntradaAhora'),
-  btnSalidaAhora: document.getElementById('btnSalidaAhora'),
   todayBadge: document.getElementById('todayBadge'),
   todayDate: document.getElementById('todayDate'),
   todayEntry: document.getElementById('todayEntry'),
-  todayExit: document.getElementById('todayExit'),
-  todayWorked: document.getElementById('todayWorked'),
+  todayTarget: document.getElementById('todayTarget'),
+  todayBalance: document.getElementById('todayBalance'),
   todayMessage: document.getElementById('todayMessage'),
   saldoTotalCard: document.getElementById('saldoTotalCard'),
-  saldoTotal: document.getElementById('saldoTotal'),
-  saldoTotalTexto: document.getElementById('saldoTotalTexto'),
   saldoMesCard: document.getElementById('saldoMesCard'),
+  saldoTotal: document.getElementById('saldoTotal'),
   saldoMes: document.getElementById('saldoMes'),
+  saldoTotalTexto: document.getElementById('saldoTotalTexto'),
   saldoMesTexto: document.getElementById('saldoMesTexto'),
   dailyTargetLabel: document.getElementById('dailyTargetLabel'),
   recordForm: document.getElementById('recordForm'),
   editingDate: document.getElementById('editingDate'),
   recordDate: document.getElementById('recordDate'),
   recordEntry: document.getElementById('recordEntry'),
-  recordExit: document.getElementById('recordExit'),
-  recordBreak: document.getElementById('recordBreak'),
   recordNote: document.getElementById('recordNote'),
   btnResetForm: document.getElementById('btnResetForm'),
   configForm: document.getElementById('configForm'),
-  configTargetHours: document.getElementById('configTargetHours'),
-  configTargetMinutes: document.getElementById('configTargetMinutes'),
-  configDefaultBreak: document.getElementById('configDefaultBreak'),
+  configTargetTime: document.getElementById('configTargetTime'),
   configCompanyName: document.getElementById('configCompanyName'),
-  recordsTableBody: document.getElementById('recordsTableBody'),
-  recordRowTemplate: document.getElementById('recordRowTemplate'),
   btnExportJson: document.getElementById('btnExportJson'),
   btnExportCsv: document.getElementById('btnExportCsv'),
-  importJsonInput: document.getElementById('importJsonInput')
+  importJsonInput: document.getElementById('importJsonInput'),
+  importExcelInput: document.getElementById('importExcelInput'),
+  importInfo: document.getElementById('importInfo'),
+  recordsTableBody: document.getElementById('recordsTableBody'),
+  rowTemplate: document.getElementById('recordRowTemplate')
 };
 
-bindEvents();
-prefillForms();
-render();
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
-  });
-}
-setInterval(render, 30000);
+bootstrap();
 
-function defaultState() {
-  return {
-    config: {
-      dailyTargetMinutes: 450,
-      defaultBreakMinutes: 0,
-      companyName: 'la empresa'
-    },
-    records: {}
-  };
+function bootstrap(){
+  wireEvents();
+  seedFormDefaults();
+  render();
+  registerServiceWorker();
 }
 
-function loadState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultState();
-    const parsed = JSON.parse(raw);
-    return {
-      config: {
-        dailyTargetMinutes: Number(parsed?.config?.dailyTargetMinutes ?? 450),
-        defaultBreakMinutes: Number(parsed?.config?.defaultBreakMinutes ?? 0),
-        companyName: String(parsed?.config?.companyName || 'la empresa')
-      },
-      records: parsed?.records && typeof parsed.records === 'object' ? parsed.records : {}
-    };
-  } catch {
-    return defaultState();
-  }
-}
-
-function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
-
-function bindEvents() {
-  els.btnEntradaAhora.addEventListener('click', () => quickPunch('entry'));
-  els.btnSalidaAhora.addEventListener('click', () => quickPunch('exit'));
-
-  els.recordForm.addEventListener('submit', (event) => {
-    event.preventDefault();
-    saveRecordFromForm();
-  });
-
-  els.btnResetForm.addEventListener('click', resetRecordForm);
-
-  els.configForm.addEventListener('submit', (event) => {
-    event.preventDefault();
-    const hours = Number(els.configTargetHours.value || 0);
-    const minutes = Number(els.configTargetMinutes.value || 0);
-    const total = Math.max(0, hours * 60 + minutes);
-    state.config.dailyTargetMinutes = total;
-    state.config.defaultBreakMinutes = Math.max(0, Number(els.configDefaultBreak.value || 0));
-    state.config.companyName = (els.configCompanyName.value || 'la empresa').trim() || 'la empresa';
-    saveState();
-    render();
-  });
-
+function wireEvents(){
+  els.btnEntradaAhora.addEventListener('click', handleQuickEntry);
+  els.recordForm.addEventListener('submit', handleSaveRecord);
+  els.btnResetForm.addEventListener('click', resetForm);
+  els.configForm.addEventListener('submit', handleSaveConfig);
   els.btnExportJson.addEventListener('click', exportJson);
   els.btnExportCsv.addEventListener('click', exportCsv);
   els.importJsonInput.addEventListener('change', importJson);
-
-  els.recordsTableBody.addEventListener('click', (event) => {
-    const editBtn = event.target.closest('.edit');
-    const deleteBtn = event.target.closest('.delete');
-    if (!editBtn && !deleteBtn) return;
-
-    const row = event.target.closest('tr');
-    const date = row?.dataset?.date;
-    if (!date) return;
-
-    if (editBtn) {
-      loadRecordIntoForm(date);
-    }
-
-    if (deleteBtn) {
-      const record = state.records[date];
-      const ok = window.confirm(`¿Borrar el registro del ${formatDate(date)}?`);
-      if (!ok) return;
-      delete state.records[date];
-      saveState();
-      if (els.editingDate.value === date) resetRecordForm();
-      render();
-    }
-  });
+  els.importExcelInput.addEventListener('change', importExcel);
 }
 
-function prefillForms() {
-  const today = todayKey();
-  if (!els.recordDate.value) els.recordDate.value = today;
-  if (!els.recordBreak.value) els.recordBreak.value = state.config.defaultBreakMinutes;
-  const [h, m] = minutesToHoursMinutes(state.config.dailyTargetMinutes);
-  els.configTargetHours.value = h;
-  els.configTargetMinutes.value = m;
-  els.configDefaultBreak.value = state.config.defaultBreakMinutes;
-  els.configCompanyName.value = state.config.companyName;
+function seedFormDefaults(){
+  const today = getTodayIso();
+  els.recordDate.value = today;
+  els.configTargetTime.value = state.config.targetTime || '07:00';
+  els.configCompanyName.value = state.config.companyName || 'la empresa';
 }
 
-function resetRecordForm() {
+function loadState(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return structuredClone(DEFAULT_STATE);
+    const parsed = JSON.parse(raw);
+    return {
+      config: {
+        targetTime: parsed?.config?.targetTime || '07:00',
+        companyName: parsed?.config?.companyName || 'la empresa'
+      },
+      records: Array.isArray(parsed?.records) ? parsed.records : []
+    };
+  }catch{
+    return structuredClone(DEFAULT_STATE);
+  }
+}
+
+function saveState(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function handleQuickEntry(){
+  const now = new Date();
+  const date = toIsoDate(now);
+  const entry = toHHMM(now);
+  const existing = state.records.find(r => r.date === date);
+  if(existing){
+    const ok = confirm(`Ya existe una entrada hoy (${existing.entry}). ¿Quieres reemplazarla por ${entry}?`);
+    if(!ok) return;
+    existing.entry = entry;
+    existing.note = existing.note || '';
+  }else{
+    state.records.push({ date, entry, note: '' });
+  }
+  sortRecords();
+  saveState();
+  render();
+}
+
+function handleSaveRecord(event){
+  event.preventDefault();
+  const date = els.recordDate.value;
+  const entry = els.recordEntry.value;
+  const note = (els.recordNote.value || '').trim();
+  if(!date || !entry) return;
+  const idx = state.records.findIndex(r => r.date === date);
+  const payload = { date, entry, note };
+  if(idx >= 0){
+    state.records[idx] = payload;
+  }else{
+    state.records.push(payload);
+  }
+  sortRecords();
+  saveState();
+  resetForm();
+  render();
+}
+
+function resetForm(){
   els.editingDate.value = '';
-  els.recordDate.value = todayKey();
+  els.recordDate.value = getTodayIso();
   els.recordEntry.value = '';
-  els.recordExit.value = '';
-  els.recordBreak.value = state.config.defaultBreakMinutes;
   els.recordNote.value = '';
 }
 
-function saveRecordFromForm() {
-  const date = els.recordDate.value;
-  if (!date) {
-    alert('Elige una fecha.');
-    return;
-  }
-
-  const entry = els.recordEntry.value || '';
-  const exit = els.recordExit.value || '';
-  const breakMinutes = Math.max(0, Number(els.recordBreak.value || 0));
-  const note = (els.recordNote.value || '').trim();
-
-  if (!entry && !exit) {
-    alert('Introduce al menos una hora de entrada o de salida.');
-    return;
-  }
-
-  if (entry && exit && compareTimes(exit, entry) < 0) {
-    alert('La salida no puede ser anterior a la entrada en este formato.');
-    return;
-  }
-
-  state.records[date] = {
-    date,
-    entry,
-    exit,
-    breakMinutes,
-    note
-  };
-  saveState();
-  resetRecordForm();
-  render();
-}
-
-function loadRecordIntoForm(date) {
-  const record = state.records[date];
-  if (!record) return;
-  els.editingDate.value = date;
-  els.recordDate.value = record.date;
-  els.recordEntry.value = record.entry || '';
-  els.recordExit.value = record.exit || '';
-  els.recordBreak.value = Number(record.breakMinutes ?? 0);
-  els.recordNote.value = record.note || '';
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-function quickPunch(type) {
-  const today = todayKey();
-  const currentTime = nowTime();
-  const currentRecord = state.records[today] || {
-    date: today,
-    entry: '',
-    exit: '',
-    breakMinutes: state.config.defaultBreakMinutes,
-    note: ''
-  };
-
-  if (type === 'entry' && currentRecord.entry) {
-    const ok = window.confirm(`Hoy ya tienes una entrada (${currentRecord.entry}). ¿Quieres reemplazarla por ${currentTime}?`);
-    if (!ok) return;
-  }
-
-  if (type === 'exit' && currentRecord.exit) {
-    const ok = window.confirm(`Hoy ya tienes una salida (${currentRecord.exit}). ¿Quieres reemplazarla por ${currentTime}?`);
-    if (!ok) return;
-  }
-
-  currentRecord[type] = currentTime;
-
-  if (currentRecord.entry && currentRecord.exit && compareTimes(currentRecord.exit, currentRecord.entry) < 0) {
-    alert('La salida quedó antes que la entrada. Revisa la hora.');
-    return;
-  }
-
-  state.records[today] = currentRecord;
+function handleSaveConfig(event){
+  event.preventDefault();
+  state.config.targetTime = els.configTargetTime.value || '07:00';
+  state.config.companyName = (els.configCompanyName.value || 'la empresa').trim() || 'la empresa';
   saveState();
   render();
 }
 
-function render() {
-  prefillForms();
-  renderSummary();
-  renderToday();
-  renderTable();
+function render(){
+  sortRecords();
+  const rows = computeRows(state.records, state.config.targetTime);
+  renderSummary(rows);
+  renderToday(rows);
+  renderTable(rows);
+  els.dailyTargetLabel.textContent = state.config.targetTime;
+  els.configTargetTime.value = state.config.targetTime;
+  els.configCompanyName.value = state.config.companyName;
 }
 
-function renderSummary() {
-  const allRecords = sortedRecords();
-  const today = todayKey();
-  const currentMonthPrefix = today.slice(0, 7);
+function renderSummary(rows){
+  const total = rows.reduce((acc, row) => acc + row.balance, 0);
+  const currentMonth = getTodayIso().slice(0,7);
+  const month = rows.filter(r => r.date.startsWith(currentMonth)).reduce((acc, row) => acc + row.balance, 0);
 
-  let totalBalance = 0;
-  let monthBalance = 0;
-
-  for (const record of allRecords) {
-    const calc = calculateRecord(record);
-    if (Number.isFinite(calc.balanceMinutes)) {
-      totalBalance += calc.balanceMinutes;
-      if (record.date.startsWith(currentMonthPrefix)) monthBalance += calc.balanceMinutes;
-    }
-  }
-
-  applySaldoCard(els.saldoTotalCard, els.saldoTotal, els.saldoTotalTexto, totalBalance, state.config.companyName, 'acumulado');
-  applySaldoCard(els.saldoMesCard, els.saldoMes, els.saldoMesTexto, monthBalance, state.config.companyName, 'este mes');
-  els.dailyTargetLabel.textContent = formatClockFromMinutes(state.config.dailyTargetMinutes);
+  setSummaryCard(els.saldoTotalCard, els.saldoTotal, els.saldoTotalTexto, total, true);
+  setSummaryCard(els.saldoMesCard, els.saldoMes, els.saldoMesTexto, month, false);
 }
 
-function applySaldoCard(card, valueEl, textEl, minutes, companyName, scopeLabel) {
-  valueEl.textContent = formatSignedMinutes(minutes);
-  card.className = 'summary-card';
-  if (minutes > 0) {
+function setSummaryCard(card, valueEl, textEl, value, totalMode){
+  card.classList.remove('positive','negative','neutral');
+  valueEl.textContent = formatMinutes(value);
+  if(value > 0){
     card.classList.add('positive');
-    textEl.textContent = `Vas a favor ${scopeLabel}`;
-  } else if (minutes < 0) {
+    textEl.textContent = totalMode
+      ? `Saldo positivo. Vas a favor de ${state.config.companyName}.`
+      : 'Mes actual en positivo.';
+  }else if(value < 0){
     card.classList.add('negative');
-    textEl.textContent = `Debes a ${companyName} ${Math.abs(minutes)} min ${scopeLabel}`;
-  } else {
+    textEl.textContent = totalMode
+      ? `Debes ${formatMinutesAbs(value)} a ${state.config.companyName}.`
+      : `Este mes debes ${formatMinutesAbs(value)}.`;
+  }else{
     card.classList.add('neutral');
-    textEl.textContent = `Saldo cuadrado ${scopeLabel}`;
+    textEl.textContent = totalMode ? 'Saldo acumulado equilibrado.' : 'Mes actual equilibrado.';
   }
 }
 
-function renderToday() {
-  const key = todayKey();
-  const record = state.records[key];
-  els.todayDate.textContent = formatDate(key);
+function renderToday(rows){
+  const today = getTodayIso();
+  const row = rows.find(r => r.date === today);
+  els.todayDate.textContent = formatDate(today);
+  els.todayTarget.textContent = state.config.targetTime;
 
-  if (!record) {
+  els.todayBadge.className = 'badge neutral';
+  els.todayMessage.className = 'status-banner neutral';
+
+  if(!row){
     els.todayEntry.textContent = '—';
-    els.todayExit.textContent = '—';
-    els.todayWorked.textContent = '—';
-    els.todayBadge.className = 'badge neutral';
+    els.todayBalance.textContent = '—';
     els.todayBadge.textContent = 'Sin fichaje';
-    els.todayMessage.className = 'status-banner neutral';
     els.todayMessage.textContent = 'Todavía no hay registro para hoy.';
     return;
   }
 
-  const calc = calculateRecord(record);
-  els.todayEntry.textContent = record.entry || '—';
-  els.todayExit.textContent = record.exit || '—';
-  els.todayWorked.textContent = calc.workedDisplay;
+  els.todayEntry.textContent = row.entry;
+  els.todayBalance.textContent = formatMinutes(row.balance);
 
-  if (calc.status === 'open') {
-    els.todayBadge.className = 'badge info';
-    els.todayBadge.textContent = 'Jornada en curso';
-    els.todayMessage.className = 'status-banner neutral';
-    els.todayMessage.textContent = `Has fichado entrada a las ${record.entry}. El saldo provisional ahora mismo es ${formatSignedMinutes(calc.balanceMinutes)}.`;
-    return;
-  }
-
-  if (calc.status === 'complete-positive') {
+  if(row.balance > 0){
     els.todayBadge.className = 'badge positive';
     els.todayBadge.textContent = 'A favor';
     els.todayMessage.className = 'status-banner positive';
-    els.todayMessage.textContent = `Hoy vas a favor ${formatSignedMinutes(calc.balanceMinutes)}.`;
-    return;
-  }
-
-  if (calc.status === 'complete-negative') {
+    els.todayMessage.textContent = `Hoy vas a favor por ${formatMinutesAbs(row.balance)}.`;
+  }else if(row.balance < 0){
     els.todayBadge.className = 'badge negative';
-    els.todayBadge.textContent = 'Debes minutos';
+    els.todayBadge.textContent = 'Debes';
     els.todayMessage.className = 'status-banner negative';
-    els.todayMessage.textContent = `Hoy debes a ${state.config.companyName} ${Math.abs(calc.balanceMinutes)} min.`;
-    return;
-  }
-
-  if (calc.status === 'complete-even') {
+    els.todayMessage.textContent = `Hoy debes ${formatMinutesAbs(row.balance)} a ${state.config.companyName}.`;
+  }else{
     els.todayBadge.className = 'badge neutral';
-    els.todayBadge.textContent = 'Cuadrado';
+    els.todayBadge.textContent = 'Justo';
     els.todayMessage.className = 'status-banner neutral';
-    els.todayMessage.textContent = 'Hoy has cuadrado exactamente tu jornada objetivo.';
-    return;
+    els.todayMessage.textContent = 'Hoy estás justo en la hora objetivo.';
   }
-
-  els.todayBadge.className = 'badge neutral';
-  els.todayBadge.textContent = 'Incompleto';
-  els.todayMessage.className = 'status-banner neutral';
-  els.todayMessage.textContent = 'El registro de hoy está incompleto.';
 }
 
-function renderTable() {
-  const records = sortedRecords();
+function renderTable(rows){
   els.recordsTableBody.innerHTML = '';
-
-  if (!records.length) {
+  if(!rows.length){
     els.recordsTableBody.innerHTML = '<tr><td colspan="9" class="empty-row">Todavía no hay registros.</td></tr>';
     return;
   }
 
-  for (const record of records) {
-    const calc = calculateRecord(record);
-    const fragment = els.recordRowTemplate.content.cloneNode(true);
+  rows.forEach(row => {
+    const fragment = els.rowTemplate.content.cloneNode(true);
     const tr = fragment.querySelector('tr');
-    tr.dataset.date = record.date;
+    tr.querySelector('.cell-date').textContent = formatDate(row.date);
+    tr.querySelector('.cell-day').textContent = row.dayShort;
+    tr.querySelector('.cell-entry').textContent = row.entry || '—';
+    tr.querySelector('.cell-early').textContent = row.excess ? `${row.excess} min` : '—';
+    tr.querySelector('.cell-late').textContent = row.defect ? `${row.defect} min` : '—';
 
-    if (calc.status === 'open') tr.classList.add('row-open');
-    else if (calc.balanceMinutes > 0) tr.classList.add('row-positive');
-    else if (calc.balanceMinutes < 0) tr.classList.add('row-negative');
+    const balanceCell = tr.querySelector('.cell-balance');
+    balanceCell.textContent = formatMinutes(row.balance);
+    balanceCell.classList.add(balanceClass(row.balance));
 
-    fragment.querySelector('.cell-date').textContent = formatDate(record.date);
-    fragment.querySelector('.cell-entry').textContent = record.entry || '—';
-    fragment.querySelector('.cell-exit').textContent = record.exit || '—';
-    fragment.querySelector('.cell-break').textContent = `${Number(record.breakMinutes || 0)} min`;
-    fragment.querySelector('.cell-worked').textContent = calc.workedDisplay;
-    fragment.querySelector('.cell-target').textContent = formatClockFromMinutes(state.config.dailyTargetMinutes);
+    const runningCell = tr.querySelector('.cell-running');
+    runningCell.textContent = formatMinutes(row.running);
+    runningCell.classList.add(balanceClass(row.running));
 
-    const balanceCell = fragment.querySelector('.cell-balance');
-    balanceCell.textContent = formatSignedMinutes(calc.balanceMinutes);
-    if (calc.balanceMinutes > 0) balanceCell.classList.add('positive');
-    else if (calc.balanceMinutes < 0) balanceCell.classList.add('negative');
+    const statusWrap = tr.querySelector('.cell-status');
+    const pill = document.createElement('span');
+    pill.className = `state-pill ${stateClass(row.balance)}`;
+    pill.textContent = row.balance > 0 ? 'A favor' : row.balance < 0 ? 'Debes' : 'Justo';
+    statusWrap.appendChild(pill);
 
-    const statusBadge = document.createElement('span');
-    statusBadge.className = 'table-badge';
-    if (calc.status === 'open') {
-      statusBadge.classList.add('warning');
-      statusBadge.textContent = 'En curso';
-    } else if (calc.status === 'complete-positive') {
-      statusBadge.classList.add('positive');
-      statusBadge.textContent = 'A favor';
-    } else if (calc.status === 'complete-negative') {
-      statusBadge.classList.add('negative');
-      statusBadge.textContent = 'Debes';
-    } else if (calc.status === 'complete-even') {
-      statusBadge.classList.add('neutral');
-      statusBadge.textContent = 'Cuadrado';
-    } else {
-      statusBadge.classList.add('neutral');
-      statusBadge.textContent = 'Incompleto';
-    }
-    fragment.querySelector('.cell-status').appendChild(statusBadge);
+    tr.querySelector('.edit').addEventListener('click', () => editRecord(row.date));
+    tr.querySelector('.delete').addEventListener('click', () => deleteRecord(row.date));
 
     els.recordsTableBody.appendChild(fragment);
-  }
+  });
 }
 
-function calculateRecord(record) {
-  const target = state.config.dailyTargetMinutes;
-  const breakMinutes = Math.max(0, Number(record.breakMinutes || 0));
+function editRecord(date){
+  const record = state.records.find(r => r.date === date);
+  if(!record) return;
+  els.editingDate.value = record.date;
+  els.recordDate.value = record.date;
+  els.recordEntry.value = record.entry;
+  els.recordNote.value = record.note || '';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
 
-  if (record.entry && record.exit) {
-    const workedMinutes = Math.max(0, diffMinutes(record.entry, record.exit) - breakMinutes);
-    const balanceMinutes = workedMinutes - target;
+function deleteRecord(date){
+  const record = state.records.find(r => r.date === date);
+  if(!record) return;
+  if(!confirm(`¿Borrar el registro del ${formatDate(date)}?`)) return;
+  state.records = state.records.filter(r => r.date !== date);
+  saveState();
+  render();
+}
+
+function computeRows(records, targetTime){
+  const sorted = [...records].sort((a,b) => a.date.localeCompare(b.date));
+  let running = 0;
+  return sorted.map(record => {
+    const targetMin = hhmmToMinutes(targetTime);
+    const entryMin = hhmmToMinutes(record.entry);
+    const excess = Math.max(0, targetMin - entryMin);
+    const defect = Math.max(0, entryMin - targetMin);
+    const balance = excess - defect;
+    running += balance;
     return {
-      workedMinutes,
-      workedDisplay: formatDuration(workedMinutes),
-      balanceMinutes,
-      status: balanceMinutes > 0 ? 'complete-positive' : balanceMinutes < 0 ? 'complete-negative' : 'complete-even'
+      ...record,
+      excess,
+      defect,
+      balance,
+      running,
+      dayShort: weekdayShort(record.date)
     };
-  }
-
-  if (record.entry && !record.exit && record.date === todayKey()) {
-    const provisionalWorked = Math.max(0, diffMinutes(record.entry, nowTime()) - breakMinutes);
-    return {
-      workedMinutes: provisionalWorked,
-      workedDisplay: `${formatDuration(provisionalWorked)} (en curso)`,
-      balanceMinutes: provisionalWorked - target,
-      status: 'open'
-    };
-  }
-
-  return {
-    workedMinutes: 0,
-    workedDisplay: '—',
-    balanceMinutes: 0,
-    status: 'incomplete'
-  };
+  });
 }
 
-function sortedRecords() {
-  return Object.values(state.records)
-    .sort((a, b) => b.date.localeCompare(a.date));
+function sortRecords(){
+  state.records.sort((a,b) => a.date.localeCompare(b.date));
 }
 
-function exportJson() {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-  downloadBlob(blob, `registro-entrada-${todayKey()}.json`);
+function exportJson(){
+  downloadFile(
+    `registro-entrada-${safeTimestamp()}.json`,
+    JSON.stringify(state, null, 2),
+    'application/json'
+  );
 }
 
-function exportCsv() {
-  const rows = [
-    ['fecha', 'entrada', 'salida', 'pausa_min', 'trabajado_min', 'objetivo_min', 'saldo_min', 'nota']
-  ];
-
-  for (const record of sortedRecords().slice().reverse()) {
-    const calc = calculateRecord(record);
-    rows.push([
-      record.date,
-      record.entry || '',
-      record.exit || '',
-      String(Number(record.breakMinutes || 0)),
-      String(calc.workedMinutes || 0),
-      String(state.config.dailyTargetMinutes),
-      String(calc.balanceMinutes || 0),
-      record.note || ''
-    ]);
-  }
-
-  const csv = rows.map(row => row.map(csvEscape).join(';')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  downloadBlob(blob, `registro-entrada-${todayKey()}.csv`);
+function exportCsv(){
+  const rows = computeRows(state.records, state.config.targetTime);
+  const header = ['Fecha','Dia','Entrada','Exceso (min)','Defecto (min)','Saldo dia (min)','Saldo acumulado (min)','Observacion'];
+  const lines = [header.join(',')];
+  rows.forEach(row => {
+    lines.push([
+      row.date,
+      row.dayShort,
+      row.entry,
+      row.excess,
+      row.defect,
+      row.balance,
+      row.running,
+      csvEscape(row.note || '')
+    ].join(','));
+  });
+  downloadFile(`registro-entrada-${safeTimestamp()}.csv`, lines.join('\n'), 'text/csv;charset=utf-8');
 }
 
-function importJson(event) {
+function importJson(event){
   const file = event.target.files?.[0];
-  if (!file) return;
-
+  if(!file) return;
   const reader = new FileReader();
   reader.onload = () => {
-    try {
-      const parsed = JSON.parse(String(reader.result || '{}'));
-      if (!parsed || typeof parsed !== 'object') throw new Error('Formato no válido');
-      state.config.dailyTargetMinutes = Number(parsed?.config?.dailyTargetMinutes ?? state.config.dailyTargetMinutes);
-      state.config.defaultBreakMinutes = Number(parsed?.config?.defaultBreakMinutes ?? state.config.defaultBreakMinutes);
-      state.config.companyName = String(parsed?.config?.companyName || state.config.companyName);
-      state.records = parsed?.records && typeof parsed.records === 'object' ? parsed.records : {};
+    try{
+      const parsed = JSON.parse(String(reader.result));
+      if(!Array.isArray(parsed.records)) throw new Error('Formato no válido');
+      const ok = confirm('Esto reemplazará los datos actuales de la app. ¿Continuar?');
+      if(!ok) return;
+      state = {
+        config: {
+          targetTime: parsed?.config?.targetTime || '07:00',
+          companyName: parsed?.config?.companyName || 'la empresa'
+        },
+        records: parsed.records
+          .filter(r => r?.date && r?.entry)
+          .map(r => ({ date: r.date, entry: r.entry, note: r.note || '' }))
+      };
       saveState();
-      resetRecordForm();
       render();
-      alert('Datos importados correctamente.');
-    } catch {
-      alert('No pude importar ese JSON.');
-    } finally {
+      setImportInfo('JSON importado correctamente.');
+    }catch(err){
+      alert('No se pudo importar el JSON.');
+    }finally{
       event.target.value = '';
     }
   };
   reader.readAsText(file);
 }
 
-function downloadBlob(blob, filename) {
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = filename;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+function importExcel(event){
+  const file = event.target.files?.[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try{
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+      const result = parseRegistroWorkbook(workbook);
+      if(!result.records.length){
+        alert('No encontré registros con hora de entrada en el Excel.');
+        return;
+      }
+      const ok = confirm(`Se importarán ${result.records.length} registros y se reemplazarán los actuales. ¿Continuar?`);
+      if(!ok) return;
+
+      state = {
+        config: {
+          targetTime: result.targetTime || state.config.targetTime || '07:00',
+          companyName: state.config.companyName || 'la empresa'
+        },
+        records: result.records
+      };
+      saveState();
+      render();
+      setImportInfo(`Excel importado: ${result.records.length} registros cargados. Hora objetivo: ${state.config.targetTime}.`);
+    }catch(err){
+      console.error(err);
+      alert('No se pudo leer ese Excel. Usa el archivo anual que preparaste para el registro.');
+    }finally{
+      event.target.value = '';
+    }
+  };
+  reader.readAsArrayBuffer(file);
 }
 
-function csvEscape(value) {
+function parseRegistroWorkbook(workbook){
+  const targetTime = parseTargetTimeFromConfig(workbook);
+  const registroSheet = workbook.Sheets['REGISTRO'] || workbook.Sheets[workbook.SheetNames[0]];
+  if(!registroSheet) throw new Error('No existe la hoja REGISTRO');
+
+  const rows = XLSX.utils.sheet_to_json(registroSheet, { header: 1, raw: true, defval: null });
+  const records = [];
+  for(let i = 1; i < rows.length; i++){
+    const row = rows[i];
+    const rawDate = row[0];
+    const rawEntry = row[2];
+    const rawNote = row[7];
+
+    const date = normalizeExcelDate(rawDate);
+    const entry = normalizeExcelTime(rawEntry);
+    if(!date || !entry) continue;
+
+    records.push({
+      date,
+      entry,
+      note: rawNote ? String(rawNote).trim() : ''
+    });
+  }
+  records.sort((a,b) => a.date.localeCompare(b.date));
+  return { targetTime, records };
+}
+
+function parseTargetTimeFromConfig(workbook){
+  const sheet = workbook.Sheets['CONFIG'];
+  if(!sheet) return null;
+  const value = sheet['B3'] ? sheet['B3'].v : null;
+  return normalizeExcelTime(value);
+}
+
+function normalizeExcelDate(value){
+  if(!value) return null;
+  if(value instanceof Date && !Number.isNaN(value.getTime())){
+    return toIsoDate(value);
+  }
+  if(typeof value === 'number'){
+    const parts = XLSX.SSF.parse_date_code(value);
+    if(!parts) return null;
+    const d = new Date(parts.y, parts.m - 1, parts.d);
+    return toIsoDate(d);
+  }
+  const text = String(value).trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const date = new Date(text);
+  if(!Number.isNaN(date.getTime())) return toIsoDate(date);
+  const m = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if(m){
+    const [,dd,mm,yyyy] = m;
+    return `${yyyy}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+  }
+  return null;
+}
+
+function normalizeExcelTime(value){
+  if(value === null || value === undefined || value === '') return null;
+  if(value instanceof Date && !Number.isNaN(value.getTime())){
+    return toHHMM(value);
+  }
+  if(typeof value === 'number'){
+    const totalMinutes = Math.round(value * 24 * 60);
+    const hh = String(Math.floor(totalMinutes / 60) % 24).padStart(2,'0');
+    const mm = String(totalMinutes % 60).padStart(2,'0');
+    return `${hh}:${mm}`;
+  }
+  const text = String(value).trim();
+  const match = text.match(/^(\d{1,2}):(\d{2})/);
+  if(match){
+    return `${match[1].padStart(2,'0')}:${match[2]}`;
+  }
+  return null;
+}
+
+function registerServiceWorker(){
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+}
+
+function setImportInfo(message){
+  els.importInfo.textContent = message;
+}
+
+function balanceClass(value){
+  return value > 0 ? 'positive' : value < 0 ? 'negative' : 'neutral';
+}
+function stateClass(value){ return balanceClass(value); }
+
+function weekdayShort(isoDate){
+  return new Intl.DateTimeFormat('es-ES', { weekday: 'short' }).format(new Date(`${isoDate}T00:00:00`)).replace('.', '');
+}
+function formatDate(isoDate){
+  return new Intl.DateTimeFormat('es-ES', { day:'2-digit', month:'2-digit', year:'numeric' }).format(new Date(`${isoDate}T00:00:00`));
+}
+function toIsoDate(date){
+  const y = date.getFullYear();
+  const m = String(date.getMonth()+1).padStart(2,'0');
+  const d = String(date.getDate()).padStart(2,'0');
+  return `${y}-${m}-${d}`;
+}
+function getTodayIso(){ return toIsoDate(new Date()); }
+function toHHMM(date){
+  return `${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
+}
+function hhmmToMinutes(value){
+  const [h,m] = String(value || '00:00').split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+function formatMinutes(value){
+  const sign = value > 0 ? '+' : value < 0 ? '-' : '';
+  return `${sign}${Math.abs(value)} min`;
+}
+function formatMinutesAbs(value){
+  return `${Math.abs(value)} min`;
+}
+function safeTimestamp(){
+  const d = new Date();
+  return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}-${String(d.getHours()).padStart(2,'0')}${String(d.getMinutes()).padStart(2,'0')}`;
+}
+function csvEscape(value){
   const text = String(value ?? '');
-  if (/[";\n]/.test(text)) return `"${text.replaceAll('"', '""')}"`;
+  if(/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
   return text;
 }
-
-function todayKey() {
-  const now = new Date();
-  return toDateKey(now);
-}
-
-function nowTime() {
-  const now = new Date();
-  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-}
-
-function toDateKey(date) {
-  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
-}
-
-function formatDate(dateKey) {
-  const [year, month, day] = dateKey.split('-').map(Number);
-  const date = new Date(year, month - 1, day);
-  return new Intl.DateTimeFormat('es-ES', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
-}
-
-function diffMinutes(start, end) {
-  return Math.max(0, timeToMinutes(end) - timeToMinutes(start));
-}
-
-function compareTimes(a, b) {
-  return timeToMinutes(a) - timeToMinutes(b);
-}
-
-function timeToMinutes(value) {
-  if (!value || !value.includes(':')) return 0;
-  const [h, m] = value.split(':').map(Number);
-  return (h * 60) + m;
-}
-
-function minutesToHoursMinutes(totalMinutes) {
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return [hours, minutes];
-}
-
-function formatClockFromMinutes(totalMinutes) {
-  const [hours, minutes] = minutesToHoursMinutes(totalMinutes);
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-}
-
-function formatDuration(totalMinutes) {
-  const abs = Math.abs(Math.round(totalMinutes));
-  const hours = Math.floor(abs / 60);
-  const minutes = abs % 60;
-  if (hours === 0) return `${minutes} min`;
-  if (minutes === 0) return `${hours} h`;
-  return `${hours} h ${minutes} min`;
-}
-
-function formatSignedMinutes(totalMinutes) {
-  const rounded = Math.round(totalMinutes);
-  if (rounded === 0) return '0 min';
-  const sign = rounded > 0 ? '+' : '-';
-  return `${sign}${formatDuration(Math.abs(rounded))}`;
+function downloadFile(filename, content, type){
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 250);
 }
