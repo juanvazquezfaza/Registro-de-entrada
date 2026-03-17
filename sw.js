@@ -1,4 +1,4 @@
-const CACHE_NAME = 'registro-entrada-v2-cache-1';
+const CACHE_NAME = 'registro-entrada-v3-cache-1';
 const ASSETS = [
   './',
   './index.html',

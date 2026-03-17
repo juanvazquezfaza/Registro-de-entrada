@@ -15,14 +15,38 @@
       <div>
         <p class="eyebrow">Control horario de entrada</p>
         <h1>Registro de entrada</h1>
-        <p class="hero-text">Botón de fichaje, saldo visual y carga del histórico desde tu Excel anual.</p>
+        <p class="hero-text">Fichaje rápido, saldo total claro y hora orientativa de mañana para compensar sin regalar tiempo.</p>
       </div>
       <div class="hero-actions">
-        <button id="btnEntradaAhora" class="btn btn-primary btn-large">Fichar entrada ahora</button>
+        <button id="btnEntradaAhora" class="btn btn-primary btn-large btn-punch">Fichar entrada ahora</button>
       </div>
     </header>
 
     <main class="grid">
+      <section class="panel summary-panel full-width">
+        <div class="panel-head summary-head">
+          <div>
+            <h2>Resumen</h2>
+            <p class="panel-subtext">Lo importante: tu saldo total y la hora orientativa de mañana para volver a saldo cero.</p>
+          </div>
+          <div class="target-chip-wrap">
+            <span class="target-chip">Hora objetivo <strong id="dailyTargetLabel">07:00</strong></span>
+          </div>
+        </div>
+        <div class="summary-grid summary-grid-2">
+          <div id="saldoTotalCard" class="summary-card summary-card-main neutral">
+            <span>Saldo total</span>
+            <strong id="saldoTotal">0 min</strong>
+            <small id="saldoTotalTexto">Sin saldo acumulado todavía</small>
+          </div>
+          <div id="tomorrowCard" class="summary-card summary-card-next neutral">
+            <span>Mañana</span>
+            <strong id="tomorrowTime">07:00</strong>
+            <small id="tomorrowText">Tu hora orientativa aparecerá aquí.</small>
+          </div>
+        </div>
+      </section>
+
       <section class="panel panel-accent">
         <div class="panel-head">
           <h2>Estado de hoy</h2>
@@ -37,7 +61,7 @@
             <span class="mini-label">Entrada</span>
             <strong id="todayEntry">—</strong>
           </div>
-          <div class="mini-card">
+          <div class="mini-card mini-card-soft">
             <span class="mini-label">Objetivo</span>
             <strong id="todayTarget">—</strong>
           </div>
@@ -47,29 +71,6 @@
           </div>
         </div>
         <div id="todayMessage" class="status-banner neutral">Todavía no hay registro para hoy.</div>
-      </section>
-
-      <section class="panel summary-panel">
-        <div class="panel-head">
-          <h2>Resumen</h2>
-        </div>
-        <div class="summary-grid">
-          <div id="saldoTotalCard" class="summary-card neutral">
-            <span>Saldo total</span>
-            <strong id="saldoTotal">0 min</strong>
-            <small id="saldoTotalTexto">Sin saldo acumulado todavía</small>
-          </div>
-          <div id="saldoMesCard" class="summary-card neutral">
-            <span>Saldo del mes</span>
-            <strong id="saldoMes">0 min</strong>
-            <small id="saldoMesTexto">Mes actual</small>
-          </div>
-          <div class="summary-card info">
-            <span>Hora objetivo</span>
-            <strong id="dailyTargetLabel">07:00</strong>
-            <small>Editable en configuración</small>
-          </div>
-        </div>
       </section>
 
       <section class="panel form-panel">
@@ -97,21 +98,17 @@
         </form>
       </section>
 
-      <section class="panel form-panel">
+      <section class="panel form-panel panel-config-light">
         <div class="panel-head">
-          <h2>Configuración</h2>
+          <h2>Ajuste rápido</h2>
         </div>
-        <form id="configForm" class="record-form compact-form">
+        <form id="configForm" class="record-form compact-form single-field-form">
           <label>
             <span>Hora objetivo</span>
             <input type="time" id="configTargetTime" step="60" />
           </label>
-          <label>
-            <span>Texto empresa</span>
-            <input type="text" id="configCompanyName" maxlength="40" placeholder="la empresa" />
-          </label>
           <div class="form-actions full-width">
-            <button type="submit" class="btn btn-secondary">Guardar configuración</button>
+            <button type="submit" class="btn btn-secondary">Guardar hora objetivo</button>
           </div>
         </form>
       </section>

@@ -1,8 +1,7 @@
-const STORAGE_KEY = 'registroEntradaApp.v2';
+const STORAGE_KEY = 'registroEntradaApp.v3';
 const DEFAULT_STATE = {
   config: {
-    targetTime: '07:00',
-    companyName: 'la empresa'
+    targetTime: '07:00'
   },
   records: []
 };
@@ -18,11 +17,11 @@ const els = {
   todayBalance: document.getElementById('todayBalance'),
   todayMessage: document.getElementById('todayMessage'),
   saldoTotalCard: document.getElementById('saldoTotalCard'),
-  saldoMesCard: document.getElementById('saldoMesCard'),
   saldoTotal: document.getElementById('saldoTotal'),
-  saldoMes: document.getElementById('saldoMes'),
   saldoTotalTexto: document.getElementById('saldoTotalTexto'),
-  saldoMesTexto: document.getElementById('saldoMesTexto'),
+  tomorrowCard: document.getElementById('tomorrowCard'),
+  tomorrowTime: document.getElementById('tomorrowTime'),
+  tomorrowText: document.getElementById('tomorrowText'),
   dailyTargetLabel: document.getElementById('dailyTargetLabel'),
   recordForm: document.getElementById('recordForm'),
   editingDate: document.getElementById('editingDate'),
@@ -32,7 +31,6 @@ const els = {
   btnResetForm: document.getElementById('btnResetForm'),
   configForm: document.getElementById('configForm'),
   configTargetTime: document.getElementById('configTargetTime'),
-  configCompanyName: document.getElementById('configCompanyName'),
   btnExportJson: document.getElementById('btnExportJson'),
   btnExportCsv: document.getElementById('btnExportCsv'),
   importJsonInput: document.getElementById('importJsonInput'),
@@ -66,20 +64,24 @@ function seedFormDefaults(){
   const today = getTodayIso();
   els.recordDate.value = today;
   els.configTargetTime.value = state.config.targetTime || '07:00';
-  els.configCompanyName.value = state.config.companyName || 'la empresa';
 }
 
 function loadState(){
   try{
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('registroEntradaApp.v2');
     if(!raw) return structuredClone(DEFAULT_STATE);
     const parsed = JSON.parse(raw);
     return {
       config: {
-        targetTime: parsed?.config?.targetTime || '07:00',
-        companyName: parsed?.config?.companyName || 'la empresa'
+        targetTime: parsed?.config?.targetTime || '07:00'
       },
-      records: Array.isArray(parsed?.records) ? parsed.records : []
+      records: Array.isArray(parsed?.records)
+        ? parsed.records.filter(r => r?.date && r?.entry).map(r => ({
+            date: r.date,
+            entry: r.entry,
+            note: r.note || ''
+          }))
+        : []
     };
   }catch{
     return structuredClone(DEFAULT_STATE);
@@ -137,7 +139,6 @@ function resetForm(){
 function handleSaveConfig(event){
   event.preventDefault();
   state.config.targetTime = els.configTargetTime.value || '07:00';
-  state.config.companyName = (els.configCompanyName.value || 'la empresa').trim() || 'la empresa';
   saveState();
   render();
 }
@@ -150,34 +151,54 @@ function render(){
   renderTable(rows);
   els.dailyTargetLabel.textContent = state.config.targetTime;
   els.configTargetTime.value = state.config.targetTime;
-  els.configCompanyName.value = state.config.companyName;
 }
 
 function renderSummary(rows){
   const total = rows.reduce((acc, row) => acc + row.balance, 0);
-  const currentMonth = getTodayIso().slice(0,7);
-  const month = rows.filter(r => r.date.startsWith(currentMonth)).reduce((acc, row) => acc + row.balance, 0);
-
-  setSummaryCard(els.saldoTotalCard, els.saldoTotal, els.saldoTotalTexto, total, true);
-  setSummaryCard(els.saldoMesCard, els.saldoMes, els.saldoMesTexto, month, false);
+  setTotalCard(total);
+  setTomorrowCard(total, state.config.targetTime, rows.length > 0);
 }
 
-function setSummaryCard(card, valueEl, textEl, value, totalMode){
+function setTotalCard(value){
+  const card = els.saldoTotalCard;
   card.classList.remove('positive','negative','neutral');
-  valueEl.textContent = formatMinutes(value);
+  els.saldoTotal.textContent = formatMinutes(value);
+
   if(value > 0){
     card.classList.add('positive');
-    textEl.textContent = totalMode
-      ? `Saldo positivo. Vas a favor de ${state.config.companyName}.`
-      : 'Mes actual en positivo.';
+    els.saldoTotalTexto.textContent = `Vas a favor por ${formatMinutesAbs(value)}.`;
   }else if(value < 0){
     card.classList.add('negative');
-    textEl.textContent = totalMode
-      ? `Debes ${formatMinutesAbs(value)} a ${state.config.companyName}.`
-      : `Este mes debes ${formatMinutesAbs(value)}.`;
+    els.saldoTotalTexto.textContent = `Debes ${formatMinutesAbs(value)}.`;
   }else{
     card.classList.add('neutral');
-    textEl.textContent = totalMode ? 'Saldo acumulado equilibrado.' : 'Mes actual equilibrado.';
+    els.saldoTotalTexto.textContent = 'Estás a saldo cero.';
+  }
+}
+
+function setTomorrowCard(total, targetTime, hasRows){
+  const card = els.tomorrowCard;
+  card.classList.remove('positive','negative','neutral');
+
+  const targetMin = hhmmToMinutes(targetTime);
+  const recommendedMin = normalizeDayMinutes(targetMin + total);
+  els.tomorrowTime.textContent = minutesToHHMM(recommendedMin);
+
+  if(!hasRows){
+    card.classList.add('neutral');
+    els.tomorrowText.textContent = 'Cuando importes o registres entradas, aquí verás la hora orientativa para volver a saldo cero.';
+    return;
+  }
+
+  if(total > 0){
+    card.classList.add('positive');
+    els.tomorrowText.textContent = `Con tu saldo actual, mañana puedes entrar a las ${minutesToHHMM(recommendedMin)} y quedar a saldo cero.`;
+  }else if(total < 0){
+    card.classList.add('negative');
+    els.tomorrowText.textContent = `Con tu saldo actual, mañana deberías entrar a las ${minutesToHHMM(recommendedMin)} para volver a saldo cero.`;
+  }else{
+    card.classList.add('neutral');
+    els.tomorrowText.textContent = `Mañana puedes entrar a tu hora objetivo habitual: ${targetTime}.`;
   }
 }
 
@@ -210,7 +231,7 @@ function renderToday(rows){
     els.todayBadge.className = 'badge negative';
     els.todayBadge.textContent = 'Debes';
     els.todayMessage.className = 'status-banner negative';
-    els.todayMessage.textContent = `Hoy debes ${formatMinutesAbs(row.balance)} a ${state.config.companyName}.`;
+    els.todayMessage.textContent = `Hoy debes ${formatMinutesAbs(row.balance)}.`;
   }else{
     els.todayBadge.className = 'badge neutral';
     els.todayBadge.textContent = 'Justo';
@@ -339,8 +360,7 @@ function importJson(event){
       if(!ok) return;
       state = {
         config: {
-          targetTime: parsed?.config?.targetTime || '07:00',
-          companyName: parsed?.config?.companyName || 'la empresa'
+          targetTime: parsed?.config?.targetTime || '07:00'
         },
         records: parsed.records
           .filter(r => r?.date && r?.entry)
@@ -376,8 +396,7 @@ function importExcel(event){
 
       state = {
         config: {
-          targetTime: result.targetTime || state.config.targetTime || '07:00',
-          companyName: state.config.companyName || 'la empresa'
+          targetTime: result.targetTime || state.config.targetTime || '07:00'
         },
         records: result.records
       };
@@ -506,6 +525,15 @@ function toHHMM(date){
 function hhmmToMinutes(value){
   const [h,m] = String(value || '00:00').split(':').map(Number);
   return (h || 0) * 60 + (m || 0);
+}
+function minutesToHHMM(totalMinutes){
+  const minutes = normalizeDayMinutes(totalMinutes);
+  const hh = String(Math.floor(minutes / 60)).padStart(2,'0');
+  const mm = String(minutes % 60).padStart(2,'0');
+  return `${hh}:${mm}`;
+}
+function normalizeDayMinutes(totalMinutes){
+  return ((totalMinutes % 1440) + 1440) % 1440;
 }
 function formatMinutes(value){
   const sign = value > 0 ? '+' : value < 0 ? '-' : '';
